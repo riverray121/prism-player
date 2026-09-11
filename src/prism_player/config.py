@@ -29,6 +29,15 @@ class AudioConfig:
     audio_url_base: str = ""
     offset_ms: int = 0
 
+    @property
+    def ha_token(self) -> str:
+        value = os.environ.get(self.ha_token_env, "")
+        if not value:
+            raise ConfigError(
+                f"environment variable {self.ha_token_env} (the Home Assistant token) is unset"
+            )
+        return value
+
 
 @dataclass
 class HooksConfig:

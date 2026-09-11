@@ -60,7 +60,9 @@ PLAYER_TOKEN=... HA_TOKEN=... uv run prism-player serve --config config.yaml
 uv run prism-player calibrate --config config.yaml   # measure audio.offset_ms
 ```
 
-Docker: `docker build -t prism-player .` and run with `--network host`, the config mounted at `/config/config.yaml`, and a volume at `/data`.
+Docker: `docker build -t prism-player .`, then run with `--network host`, the config mounted at `/config/config.yaml`, a volume at `/data`, and `PLAYER_TOKEN` and `HA_TOKEN` in the environment. The image's healthcheck polls `/healthz` on `PLAYER_PORT` (default 8760); set it to match `listen` when that differs.
+
+`calibrate` needs a terminal: it finds the hubs, installs a 30 s click show, plays it through the configured backend, and reads keys (`+`/`-` nudge the offset by 10 ms, `]`/`[` by 1 ms, `r` restarts, `q` quits and prints the `audio.offset_ms` line for the config).
 
 ## License
 

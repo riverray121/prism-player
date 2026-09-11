@@ -125,6 +125,13 @@ class Engine:
         # play reports it.
         await self._started.wait()
 
+    def set_offset(self, offset_ms: int) -> None:
+        """Change the light delay live: the current show's clock shifts with it."""
+        new = offset_ms / 1000
+        if self.current is not None and self.current.t0 is not None:
+            self.current.t0 += new - self.offset_s
+        self.offset_s = new
+
     async def play_all(self, shuffle: bool = False) -> None:
         ids = [s["id"] for s in self.shows.list()]
         if shuffle:
@@ -251,11 +258,13 @@ class Engine:
                 next_poll = now + POSITION_POLL_S
                 pos = await self.audio.position()
                 if pos is not None:
-                    expected = self.clock.now() - cur.t0
+                    # Lights run offset_s behind the audio: light time is
+                    # now - t0, audio time is that plus the offset.
+                    expected = self.clock.now() - cur.t0 + self.offset_s
                     if abs(pos - expected) > period:
                         strikes += 1
                         if strikes >= POSITION_STRIKES:
-                            cur.t0 = self.clock.now() - pos
+                            cur.t0 = self.clock.now() - pos + self.offset_s
                             strikes = 0
                     else:
                         strikes = 0

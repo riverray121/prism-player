@@ -237,6 +237,82 @@ async def test_position_correction_rebases_after_two_strikes(tmp_path: Path):
     assert light0[-1].t == pytest.approx(399 * PERIOD + 1.0)
 
 
+async def test_single_outlier_poll_does_not_rebase(tmp_path: Path):
+    shows = ShowStore(tmp_path)
+    install(shows, "long", long_bundle(tmp_path))
+    clock = FakeClock()
+    hubs = FakeHubs()
+    hubs.add(MAC, "10.0.0.5", [(0, 4), (4, 3)], on=True)
+    sender = FakeSender(clock)
+
+    class OutlierAudio(NoneAudio):
+        polls = 0
+
+        async def position(self) -> float | None:
+            self.polls += 1
+            # Only the first poll is off by a second; every later one agrees.
+            return clock.now() - (1.0 if self.polls == 1 else 0.0)
+
+    async with aiohttp.ClientSession() as session:
+        engine = Engine(
+            shows, hubs, sender, OutlierAudio(), Hooks(session), audio_url=lambda i: i, clock=clock
+        )
+        await engine.play(["long"])
+        await wait_idle(engine)
+    light0 = [s for s in sender.sent if int.from_bytes(s.packets[0][4:8], "big") == 0]
+    assert light0[-1].t == pytest.approx(399 * PERIOD)
+
+
+async def test_offset_is_kept_across_position_checks(tmp_path: Path):
+    shows = ShowStore(tmp_path)
+    install(shows, "long", long_bundle(tmp_path))
+    clock = FakeClock()
+    hubs = FakeHubs()
+    hubs.add(MAC, "10.0.0.5", [(0, 4), (4, 3)], on=True)
+    sender = FakeSender(clock)
+    start = {"t": 0.0}
+
+    class ExactAudio(NoneAudio):
+        async def start(self, url: str) -> None:
+            start["t"] = clock.now()
+
+        async def position(self) -> float | None:
+            return clock.now() - start["t"]
+
+    async with aiohttp.ClientSession() as session:
+        engine = Engine(
+            shows,
+            hubs,
+            sender,
+            ExactAudio(),
+            Hooks(session),
+            audio_url=lambda i: i,
+            offset_ms=200,
+            clock=clock,
+        )
+        await engine.play(["long"])
+        await wait_idle(engine)
+    # Audio agrees with the clock exactly, so the 200 ms light delay stays put:
+    # every frame lands 0.2 s after its audio time.
+    light0 = [s for s in sender.sent if int.from_bytes(s.packets[0][4:8], "big") == 0]
+    assert light0[0].t == pytest.approx(0.2)
+    assert light0[-1].t == pytest.approx(399 * PERIOD + 0.2)
+
+
+def long_bundle(tmp_path: Path) -> bytes:
+    """A 400-frame bundle: frame files sized for the larger count."""
+    data = bundle(manifest(frame_count=400, duration_s=10.0))
+    out = io.BytesIO()
+    with zipfile.ZipFile(io.BytesIO(data)) as zf, zipfile.ZipFile(out, "w") as w:
+        for name in zf.namelist():
+            if name.startswith("frames/"):
+                key = name[len("frames/") : -4]
+                w.writestr(name, bytes(400 * dict(LIGHTS)[key] * 3))
+            else:
+                w.writestr(name, zf.read(name))
+    return out.getvalue()
+
+
 async def test_hooks_fire_once_per_start_and_end_and_failures_are_ignored(tmp_path: Path):
     received: list[dict] = []
 

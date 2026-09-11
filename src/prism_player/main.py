@@ -11,9 +11,10 @@ from pathlib import Path
 import aiohttp
 from aiohttp import web
 
-from prism_player import config
+from prism_player import calibrate, config
 from prism_player.api import build_app
 from prism_player.audio.base import AudioBackend
+from prism_player.audio.ha import HaBackend
 from prism_player.audio.none import NoneAudio
 from prism_player.ddp import Sender
 from prism_player.engine import Engine
@@ -37,7 +38,7 @@ async def serve(cfg: config.Config) -> None:
             shows,
             hubs,
             sender,
-            audio_backend(cfg),
+            audio_backend(cfg, session),
             hooks,
             audio_url=lambda show_id: f"{cfg.audio.audio_url_base}/v1/shows/{show_id}/audio",
             offset_ms=cfg.audio.offset_ms,
@@ -61,10 +62,10 @@ async def serve(cfg: config.Config) -> None:
             requests.close()
 
 
-def audio_backend(cfg: config.Config) -> AudioBackend:
+def audio_backend(cfg: config.Config, session: aiohttp.ClientSession) -> AudioBackend:
     if cfg.audio.backend == "none":
         return NoneAudio()
-    raise config.ConfigError(f"audio backend {cfg.audio.backend!r} is not built yet")
+    return HaBackend(session, cfg.audio.ha_url, cfg.audio.ha_token, cfg.audio.media_player)
 
 
 def main() -> None:
@@ -79,11 +80,11 @@ def main() -> None:
     except (config.ConfigError, OSError) as exc:
         print(f"config error: {exc}", file=sys.stderr)
         sys.exit(2)
-    if args.command == "calibrate":
-        print("calibrate is not built yet", file=sys.stderr)
-        sys.exit(2)
     try:
-        asyncio.run(serve(cfg))
+        if args.command == "calibrate":
+            asyncio.run(calibrate.run(cfg, audio_backend))
+        else:
+            asyncio.run(serve(cfg))
     except KeyboardInterrupt:
         pass
 
