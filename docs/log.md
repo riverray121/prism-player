@@ -1,0 +1,19 @@
+# Dev Log
+
+Development context for resuming work. One line per entry. Not a changelog.
+
+## Completed
+- Step 1: show store with atomic replace, Companion API, bearer middleware, audio route with ranges.
+- Step 2: SQLite requests with external-id dedupe, `on_request` hook.
+- Step 3: `ddp.py` byte-identical to Prism's ddp.ts (shared fixture `tests/fixtures/ddp_packets.json`), `hubs.py` (mDNS + config by MAC, WLED JSON), `engine.py` frame scheduler on an injectable clock with restore-on-stop, `none` audio backend, `/v1/play`, `/v1/stop`, `/v1/status`.
+- Step 5: queue (`queue: [ids]` or `all` with shuffle), `/v1/next`, `on_play` and `on_stop` hooks.
+
+## Todo
+- Step 3 bench run on the real hub (user go).
+- Step 4: `ha` audio backend, `calibrate`.
+- Step 6: Dockerfile, tag v0.1.0.
+
+## Notes
+- A backward clock re-base (audio behind the lights) never resends frames; later frames land later. A forward re-base skips to the frame due now, like any late frame.
+- `play` and `next` return once the next show is current, so a status read right after them reports it.
+- `Hubs._on_change` runs on the zeroconf thread pool callback into the loop via `asyncio.create_task`; the browser is created on the event loop, so the callback fires there.
