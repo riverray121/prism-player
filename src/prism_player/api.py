@@ -12,6 +12,7 @@ from aiohttp import web
 
 from prism_player import API_VERSION, __version__
 from prism_player.config import Config
+from prism_player.engine import Engine
 from prism_player.hooks import Hooks
 from prism_player.requests import STATUSES, RequestStore, UnknownRequest
 from prism_player.store import BadBundle, ShowStore, UnknownShow
@@ -29,7 +30,12 @@ def _is_public(request: web.Request) -> bool:
 
 
 def build_app(
-    cfg: Config, token: str, shows: ShowStore, requests: RequestStore, hooks: Hooks
+    cfg: Config,
+    token: str,
+    shows: ShowStore,
+    requests: RequestStore,
+    hooks: Hooks,
+    engine: Engine,
 ) -> web.Application:
     @web.middleware
     async def auth(request: web.Request, handler: Handler) -> web.StreamResponse:
@@ -124,6 +130,29 @@ def build_app(
         content_type = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
         return web.FileResponse(path, headers={"Content-Type": content_type})
 
+    async def play(request: web.Request) -> web.Response:
+        body = await request.json()
+        if "show" in body:
+            await engine.play([str(body["show"])])
+        elif body.get("queue") == "all":
+            await engine.play_all(shuffle=bool(body.get("shuffle", False)))
+        elif isinstance(body.get("queue"), list):
+            await engine.play([str(s) for s in body["queue"]])
+        else:
+            raise ValueError("body needs show, queue: [ids], or queue: all")
+        return web.json_response(engine.status())
+
+    async def stop(_request: web.Request) -> web.Response:
+        await engine.stop()
+        return web.json_response(engine.status())
+
+    async def next_show(_request: web.Request) -> web.Response:
+        await engine.next()
+        return web.json_response(engine.status())
+
+    async def status(_request: web.Request) -> web.Response:
+        return web.json_response(engine.status())
+
     app = web.Application(middlewares=[auth], client_max_size=1 << 30)
     app.router.add_get("/healthz", healthz)
     app.router.add_get("/v1/info", info)
@@ -135,4 +164,8 @@ def build_app(
     app.router.add_get("/v1/shows/{id}/bundle", get_bundle)
     app.router.add_delete("/v1/shows/{id}", delete_show)
     app.router.add_get("/v1/shows/{id}/audio", audio, name="audio")
+    app.router.add_post("/v1/play", play)
+    app.router.add_post("/v1/stop", stop)
+    app.router.add_post("/v1/next", next_show)
+    app.router.add_get("/v1/status", status)
     return app

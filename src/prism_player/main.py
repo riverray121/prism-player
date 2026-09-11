@@ -13,7 +13,12 @@ from aiohttp import web
 
 from prism_player import config
 from prism_player.api import build_app
+from prism_player.audio.base import AudioBackend
+from prism_player.audio.none import NoneAudio
+from prism_player.ddp import Sender
+from prism_player.engine import Engine
 from prism_player.hooks import Hooks
+from prism_player.hubs import Hubs
 from prism_player.requests import RequestStore
 from prism_player.store import ShowStore
 
@@ -26,7 +31,21 @@ async def serve(cfg: config.Config) -> None:
     requests = RequestStore(cfg.data_dir / "requests.sqlite")
     async with aiohttp.ClientSession() as session:
         hooks = Hooks(session)
-        runner = web.AppRunner(build_app(cfg, token, shows, requests, hooks))
+        hubs = Hubs(session, cfg.hubs)
+        sender = Sender()
+        engine = Engine(
+            shows,
+            hubs,
+            sender,
+            audio_backend(cfg),
+            hooks,
+            audio_url=lambda show_id: f"{cfg.audio.audio_url_base}/v1/shows/{show_id}/audio",
+            offset_ms=cfg.audio.offset_ms,
+            on_play_url=cfg.hooks.on_play,
+            on_stop_url=cfg.hooks.on_stop,
+        )
+        await hubs.start()
+        runner = web.AppRunner(build_app(cfg, token, shows, requests, hooks, engine))
         await runner.setup()
         site = web.TCPSite(runner, cfg.listen_host, cfg.listen_port)
         await site.start()
@@ -34,9 +53,18 @@ async def serve(cfg: config.Config) -> None:
         try:
             await asyncio.Event().wait()
         finally:
+            await engine.stop()
+            await hubs.stop()
+            sender.close()
             await hooks.drain()
             await runner.cleanup()
             requests.close()
+
+
+def audio_backend(cfg: config.Config) -> AudioBackend:
+    if cfg.audio.backend == "none":
+        return NoneAudio()
+    raise config.ConfigError(f"audio backend {cfg.audio.backend!r} is not built yet")
 
 
 def main() -> None:
