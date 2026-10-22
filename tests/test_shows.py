@@ -90,3 +90,11 @@ async def test_audio_route_is_public_with_range(client):
     assert part.status == 206
     assert await part.read() == body[4:8]
     assert (await client.get("/v1/shows/nope/audio")).status == 404
+
+
+async def test_put_fires_the_publish_hook(client, hook_target):
+    _, received = hook_target
+    assert (await client.put("/v1/shows/a", data=bundle(), headers=ZIP)).status == 200
+    await client.hooks.drain()
+    events = [r for r in received if r.get("event") == "published"]
+    assert len(events) == 1 and events[0]["id"] == "a" and "title" in events[0]

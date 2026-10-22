@@ -42,6 +42,7 @@ class AudioConfig:
 @dataclass
 class HooksConfig:
     on_request: str | None = None
+    on_publish: str | None = None
     on_play: str | None = None
     on_stop: str | None = None
 
@@ -114,6 +115,7 @@ def parse(raw: Any) -> Config:
     hooks = _expect(top.get("hooks"), "hooks")
     cfg.hooks = HooksConfig(
         on_request=_opt_str(hooks.get("on_request")),
+        on_publish=_opt_str(hooks.get("on_publish")),
         on_play=_opt_str(hooks.get("on_play")),
         on_stop=_opt_str(hooks.get("on_stop")),
     )

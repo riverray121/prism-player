@@ -48,6 +48,7 @@ async def serve(cfg: config.Config) -> None:
         await hubs.start()
         runner = web.AppRunner(build_app(cfg, token, shows, requests, hooks, engine))
         await runner.setup()
+        engine.announce_startup()
         site = web.TCPSite(runner, cfg.listen_host, cfg.listen_port)
         await site.start()
         log.info("listening on %s:%s", cfg.listen_host, cfg.listen_port)

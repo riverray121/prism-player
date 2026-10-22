@@ -60,3 +60,16 @@ async def test_play_all_and_bad_bodies(client):
     assert (await client.post("/v1/play", json={}, headers=AUTH)).status == 400
     assert (await client.post("/v1/play", json={"show": "nope"}, headers=AUTH)).status == 404
     assert (await client.get("/v1/status", headers=AUTH)).status == 200
+
+
+async def test_play_by_query_matches_fuzzily_and_404s_otherwise(client):
+    client.hubs.add(MAC, "10.0.0.5", [(0, 4), (4, 3)], on=True)
+    assert (await client.put("/v1/shows/a", data=bundle(), headers=ZIP)).status == 200
+    title = client.engine.shows.manifest("a")["title"]
+    resp = await client.post("/v1/play", json={"query": title.upper()}, headers=AUTH)
+    assert resp.status == 200
+    assert (await resp.json())["show"]["id"] == "a"
+    await client.post("/v1/stop", headers=AUTH)
+    resp = await client.post("/v1/play", json={"query": "zzqx nonsense"}, headers=AUTH)
+    assert resp.status == 404
+    assert "no show matches" in (await resp.json())["error"]

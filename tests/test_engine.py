@@ -347,3 +347,45 @@ async def test_hooks_fire_once_per_start_and_end_and_failures_are_ignored(tmp_pa
             await hooks.drain()
     assert [r["event"] for r in received] == ["play"]
     assert received[0]["id"] == "a" and received[0]["title"] == "Dior"
+
+
+async def test_stop_while_idle_still_stops_the_audio(rig):
+    engine, *_ = rig
+
+    class CountingAudio(NoneAudio):
+        stopped = 0
+
+        async def stop(self) -> None:
+            self.stopped += 1
+
+    engine.audio = CountingAudio()
+    await engine.stop()
+    assert engine.audio.stopped == 1
+
+
+async def test_announce_startup_fires_the_stop_hook(tmp_path: Path):
+    received: list[dict] = []
+
+    async def take(request: web.Request) -> web.Response:
+        received.append(await request.json())
+        return web.Response()
+
+    app = web.Application()
+    app.router.add_post("/hook", take)
+    async with TestServer(app) as server:
+        clock = FakeClock()
+        async with aiohttp.ClientSession() as session:
+            hooks = Hooks(session)
+            engine = Engine(
+                ShowStore(tmp_path),
+                FakeHubs(),
+                FakeSender(clock),
+                NoneAudio(),
+                hooks,
+                audio_url=lambda i: i,
+                on_stop_url=f"http://{server.host}:{server.port}/hook",
+                clock=clock,
+            )
+            engine.announce_startup()
+            await hooks.drain()
+    assert received == [{"event": "stop", "id": None, "reason": "startup"}]

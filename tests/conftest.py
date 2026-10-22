@@ -37,6 +37,7 @@ async def client(tmp_path, hook_target):
     url, _ = hook_target
     cfg = Config(data_dir=tmp_path)
     cfg.hooks.on_request = url
+    cfg.hooks.on_publish = url
     shows = ShowStore(tmp_path)
     requests = RequestStore(tmp_path / "requests.sqlite")
     async with aiohttp.ClientSession() as session:

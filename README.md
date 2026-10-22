@@ -21,7 +21,7 @@ The Companion API (`/v1/info`, `/v1/requests`, `/v1/shows`) as defined by Prism,
 
 | Method | Path | Purpose |
 |---|---|---|
-| POST | `/v1/play` | `{show}` or `{queue: [show, ...]}` or `{queue: "all", shuffle: bool}` |
+| POST | `/v1/play` | `{query}` (fuzzy title or artist match, 404 when nothing matches), `{show}`, `{queue: [show, ...]}`, or `{queue: "all", shuffle: bool}` |
 | POST | `/v1/stop` | Stop, restore hubs |
 | POST | `/v1/next` | Skip to the next queued show |
 | GET | `/v1/status` | `{state, show, position_s, queue}` |
@@ -48,6 +48,7 @@ audio:
   offset_ms: 0                 # from `prism-player calibrate`
 hooks:                         # optional webhooks, POSTed with a JSON body
   on_request: http://127.0.0.1:8123/api/webhook/prism_request
+  on_publish: http://127.0.0.1:8123/api/webhook/prism_published
   on_play: http://127.0.0.1:8123/api/webhook/prism_play
   on_stop: http://127.0.0.1:8123/api/webhook/prism_stop
 ```

@@ -147,6 +147,16 @@ class Engine:
                 await runner
             except asyncio.CancelledError:
                 pass
+            return
+        # Nothing of ours is running, but the speaker may still be: a show cut
+        # short by a process restart leaves the audio stream playing. A stop
+        # request means silence either way.
+        await self.audio.stop()
+
+    def announce_startup(self) -> None:
+        """Tell the hooks' listeners that no show is playing. A restart mid-show
+        never reached the stop hook, so the listener's flag would stay set."""
+        self.hooks.fire(self.on_stop_url, "stop", {"id": None, "reason": "startup"})
 
     async def next(self) -> None:
         task = self._show_task

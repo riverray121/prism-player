@@ -14,6 +14,7 @@ from prism_player import API_VERSION, __version__
 from prism_player.config import Config
 from prism_player.engine import Engine
 from prism_player.hooks import Hooks
+from prism_player.match import best_match
 from prism_player.requests import STATUSES, RequestStore, UnknownRequest
 from prism_player.store import BadBundle, ShowStore, UnknownShow
 
@@ -95,9 +96,11 @@ def build_app(
                 tmp.write(chunk)
             zip_path = Path(tmp.name)
         try:
-            return web.json_response(shows.put(show_id, zip_path))
+            summary = shows.put(show_id, zip_path)
         finally:
             zip_path.unlink(missing_ok=True)
+        hooks.fire(cfg.hooks.on_publish, "published", summary)
+        return web.json_response(summary)
 
     async def get_bundle(request: web.Request) -> web.StreamResponse:
         show_id = request.match_info["id"]
@@ -132,14 +135,21 @@ def build_app(
 
     async def play(request: web.Request) -> web.Response:
         body = await request.json()
-        if "show" in body:
+        if "query" in body:
+            matched = best_match(str(body["query"]), shows.list())
+            if matched is None:
+                return web.json_response(
+                    {"error": f"no show matches {body['query']!r}"}, status=404
+                )
+            await engine.play([str(matched["id"])])
+        elif "show" in body:
             await engine.play([str(body["show"])])
         elif body.get("queue") == "all":
             await engine.play_all(shuffle=bool(body.get("shuffle", False)))
         elif isinstance(body.get("queue"), list):
             await engine.play([str(s) for s in body["queue"]])
         else:
-            raise ValueError("body needs show, queue: [ids], or queue: all")
+            raise ValueError("body needs query, show, queue: [ids], or queue: all")
         return web.json_response(engine.status())
 
     async def stop(_request: web.Request) -> web.Response:
