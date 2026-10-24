@@ -15,6 +15,7 @@ from prism_player.config import Config
 from prism_player.engine import Engine
 from prism_player.hooks import Hooks
 from prism_player.match import best_match
+from prism_player.publish_batch import PublishBatcher
 from prism_player.requests import STATUSES, RequestStore, UnknownRequest
 from prism_player.store import BadBundle, ShowStore, UnknownShow
 
@@ -37,6 +38,7 @@ def build_app(
     requests: RequestStore,
     hooks: Hooks,
     engine: Engine,
+    batcher: PublishBatcher | None = None,
 ) -> web.Application:
     @web.middleware
     async def auth(request: web.Request, handler: Handler) -> web.StreamResponse:
@@ -99,7 +101,10 @@ def build_app(
             summary = shows.put(show_id, zip_path)
         finally:
             zip_path.unlink(missing_ok=True)
-        hooks.fire(cfg.hooks.on_publish, "published", summary)
+        if batcher is not None:
+            batcher.add(summary)
+        else:
+            hooks.fire(cfg.hooks.on_publish, "published", summary)
         return web.json_response(summary)
 
     async def get_bundle(request: web.Request) -> web.StreamResponse:

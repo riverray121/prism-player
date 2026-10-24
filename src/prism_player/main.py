@@ -20,6 +20,7 @@ from prism_player.ddp import Sender
 from prism_player.engine import Engine
 from prism_player.hooks import Hooks
 from prism_player.hubs import Hubs
+from prism_player.publish_batch import PublishBatcher
 from prism_player.requests import RequestStore
 from prism_player.store import ShowStore
 
@@ -46,7 +47,9 @@ async def serve(cfg: config.Config) -> None:
             on_stop_url=cfg.hooks.on_stop,
         )
         await hubs.start()
-        runner = web.AppRunner(build_app(cfg, token, shows, requests, hooks, engine))
+        batcher = PublishBatcher(hooks, cfg.hooks.on_publish, requests.pending_count)
+        batcher.start()
+        runner = web.AppRunner(build_app(cfg, token, shows, requests, hooks, engine, batcher))
         await runner.setup()
         engine.announce_startup()
         site = web.TCPSite(runner, cfg.listen_host, cfg.listen_port)
@@ -56,6 +59,7 @@ async def serve(cfg: config.Config) -> None:
             await asyncio.Event().wait()
         finally:
             await engine.stop()
+            await batcher.stop()
             await hubs.stop()
             sender.close()
             await hooks.drain()

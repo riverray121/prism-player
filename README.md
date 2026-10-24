@@ -48,7 +48,7 @@ audio:
   offset_ms: 0                 # from `prism-player calibrate`
 hooks:                         # optional webhooks, POSTed with a JSON body
   on_request: http://127.0.0.1:8123/api/webhook/prism_request
-  on_publish: http://127.0.0.1:8123/api/webhook/prism_published
+  on_publish: http://127.0.0.1:8123/api/webhook/prism_published   # one POST per batch: {count, shows, pending}
   on_play: http://127.0.0.1:8123/api/webhook/prism_play
   on_stop: http://127.0.0.1:8123/api/webhook/prism_stop
 ```

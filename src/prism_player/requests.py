@@ -110,3 +110,7 @@ class RequestStore:
 
     def close(self) -> None:
         self.con.close()
+
+    def pending_count(self) -> int:
+        """Requests still open or analyzing: songs whose shows have not landed."""
+        return sum(1 for r in self.list() if r["status"] in ("open", "analyzing"))
