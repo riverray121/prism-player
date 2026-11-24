@@ -73,3 +73,15 @@ async def test_play_by_query_matches_fuzzily_and_404s_otherwise(client):
     resp = await client.post("/v1/play", json={"query": "zzqx nonsense"}, headers=AUTH)
     assert resp.status == 404
     assert "no show matches" in (await resp.json())["error"]
+
+
+async def test_play_by_query_reports_a_song_still_in_the_pipeline(client):
+    client.hubs.add(MAC, "10.0.0.5", [(0, 4), (4, 3)], on=True)
+    body = {"title": "Things Are Changing", "artist": "Tokyo Tea Room"}
+    assert (await client.post("/v1/requests", json=body, headers=AUTH)).status == 201
+    resp = await client.post("/v1/play", json={"query": "things are changing"}, headers=AUTH)
+    assert resp.status == 404
+    assert "still being analyzed" in (await resp.json())["error"]
+    resp = await client.post("/v1/play", json={"query": "zzqx nonsense"}, headers=AUTH)
+    assert resp.status == 404
+    assert "no show matches" in (await resp.json())["error"]

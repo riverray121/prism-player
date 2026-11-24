@@ -138,14 +138,23 @@ def build_app(
         content_type = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
         return web.FileResponse(path, headers={"Content-Type": content_type})
 
+    def _miss_reason(query: str) -> str:
+        """Why a query played nothing: a request for the song still in the
+        pipeline is a different answer from an unknown song, and the voice
+        agent relays the reason as spoken."""
+        pending = [r for r in requests.list() if r["status"] in ("open", "analyzing")]
+        hit = best_match(query, pending)
+        if hit is not None:
+            return f"{hit['title']!r} is still being analyzed; try again in a few minutes"
+        return f"no show matches {query!r}"
+
     async def play(request: web.Request) -> web.Response:
         body = await request.json()
         if "query" in body:
-            matched = best_match(str(body["query"]), shows.list())
+            query = str(body["query"])
+            matched = best_match(query, shows.list())
             if matched is None:
-                return web.json_response(
-                    {"error": f"no show matches {body['query']!r}"}, status=404
-                )
+                return web.json_response({"error": _miss_reason(query)}, status=404)
             await engine.play([str(matched["id"])])
         elif "show" in body:
             await engine.play([str(body["show"])])
