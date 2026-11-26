@@ -20,6 +20,7 @@ from prism_player.ddp import Sender
 from prism_player.engine import Engine
 from prism_player.hooks import Hooks
 from prism_player.hubs import Hubs
+from prism_player.playlists import PlaylistStore, palette_for
 from prism_player.publish_batch import PublishBatcher
 from prism_player.requests import RequestStore
 from prism_player.store import ShowStore
@@ -31,6 +32,7 @@ async def serve(cfg: config.Config) -> None:
     token = cfg.token
     shows = ShowStore(cfg.data_dir)
     requests = RequestStore(cfg.data_dir / "requests.sqlite")
+    playlists = PlaylistStore(cfg.data_dir / "playlists.sqlite")
     async with aiohttp.ClientSession() as session:
         hooks = Hooks(session)
         hubs = Hubs(session, cfg.hubs)
@@ -45,11 +47,14 @@ async def serve(cfg: config.Config) -> None:
             offset_ms=cfg.audio.offset_ms,
             on_play_url=cfg.hooks.on_play,
             on_stop_url=cfg.hooks.on_stop,
+            palette_for=lambda show_id: palette_for(show_id, playlists, requests, shows),
         )
         await hubs.start()
         batcher = PublishBatcher(hooks, cfg.hooks.on_publish, requests.pending_count)
         batcher.start()
-        runner = web.AppRunner(build_app(cfg, token, shows, requests, hooks, engine, batcher))
+        runner = web.AppRunner(
+            build_app(cfg, token, shows, requests, hooks, engine, batcher, playlists)
+        )
         await runner.setup()
         engine.announce_startup()
         site = web.TCPSite(runner, cfg.listen_host, cfg.listen_port)
@@ -65,6 +70,7 @@ async def serve(cfg: config.Config) -> None:
             await hooks.drain()
             await runner.cleanup()
             requests.close()
+            playlists.close()
 
 
 def audio_backend(cfg: config.Config, session: aiohttp.ClientSession) -> AudioBackend:

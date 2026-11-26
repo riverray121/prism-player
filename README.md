@@ -21,7 +21,10 @@ The Companion API (`/v1/info`, `/v1/requests`, `/v1/shows`) as defined by Prism,
 
 | Method | Path | Purpose |
 |---|---|---|
-| POST | `/v1/play` | `{query}` (fuzzy title or artist match, 404 when nothing matches), `{show}`, `{queue: [show, ...]}`, or `{queue: "all", shuffle: bool}` |
+| POST | `/v1/play` | `{query}` (a playlist name plays that playlist shuffled; otherwise fuzzy title or artist match, 404 when nothing matches), `{show}`, `{playlist, shuffle?}` (shuffle defaults to true), `{queue: [show, ...]}`, or `{queue: "all", shuffle: bool}` |
+| PUT | `/v1/playlists/{name}` | `{spotify_uris: [...], palette?}`: replace a playlist's songs; `palette` names an entry in `palettes.py` |
+| GET | `/v1/playlists` | `{playlists: [{name, spotify_uris, palette, show_ids}]}` |
+| DELETE | `/v1/playlists/{name}` | Remove a playlist |
 | POST | `/v1/stop` | Stop, restore hubs |
 | POST | `/v1/next` | Skip to the next queued show |
 | GET | `/v1/status` | `{state, show, position_s, queue}` |

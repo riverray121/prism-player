@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import logging
 import mimetypes
+import random
 import tempfile
 from collections.abc import Awaitable, Callable
 from pathlib import Path
+from typing import Any
 
 from aiohttp import web
 
@@ -15,6 +17,8 @@ from prism_player.config import Config
 from prism_player.engine import Engine
 from prism_player.hooks import Hooks
 from prism_player.match import best_match
+from prism_player.palettes import UnknownPalette
+from prism_player.playlists import PlaylistStore, UnknownPlaylist, show_ids
 from prism_player.publish_batch import PublishBatcher
 from prism_player.requests import STATUSES, RequestStore, UnknownRequest
 from prism_player.store import BadBundle, ShowStore, UnknownShow
@@ -39,7 +43,10 @@ def build_app(
     hooks: Hooks,
     engine: Engine,
     batcher: PublishBatcher | None = None,
+    playlists: PlaylistStore | None = None,
 ) -> web.Application:
+    playlist_store = playlists or PlaylistStore(cfg.data_dir / "playlists.sqlite")
+
     @web.middleware
     async def auth(request: web.Request, handler: Handler) -> web.StreamResponse:
         if not _is_public(request):
@@ -47,8 +54,10 @@ def build_app(
                 return web.json_response({"error": "bearer token required"}, status=401)
         try:
             return await handler(request)
-        except (UnknownShow, UnknownRequest) as exc:
+        except (UnknownShow, UnknownRequest, UnknownPlaylist) as exc:
             return web.json_response({"error": f"not found: {exc.args[0]}"}, status=404)
+        except UnknownPalette as exc:
+            return web.json_response({"error": f"unknown palette: {exc.args[0]}"}, status=400)
         except BadBundle as exc:
             return web.json_response({"error": f"bad bundle: {exc}"}, status=400)
         except (KeyError, ValueError, TypeError) as exc:
@@ -148,10 +157,48 @@ def build_app(
             return f"{hit['title']!r} is still being analyzed; try again in a few minutes"
         return f"no show matches {query!r}"
 
+    def _playlist_view(p: dict[str, Any]) -> dict[str, Any]:
+        ids = show_ids(p, requests, shows)
+        return {**p, "show_ids": ids}
+
+    async def list_playlists(_request: web.Request) -> web.Response:
+        return web.json_response({"playlists": [_playlist_view(p) for p in playlist_store.list()]})
+
+    async def put_playlist(request: web.Request) -> web.Response:
+        body = await request.json()
+        uris = body["spotify_uris"]
+        if not isinstance(uris, list):
+            raise ValueError("spotify_uris must be a list")
+        palette = body.get("palette")
+        p = playlist_store.put(request.match_info["name"], uris, str(palette) if palette else None)
+        return web.json_response(_playlist_view(p))
+
+    async def delete_playlist(request: web.Request) -> web.Response:
+        playlist_store.delete(request.match_info["name"])
+        return web.Response(status=204)
+
+    async def _play_playlist(p: dict[str, Any], shuffle: bool) -> web.Response:
+        ids = show_ids(p, requests, shows)
+        if not ids:
+            return web.json_response(
+                {"error": f"playlist {p['name']!r} has no playable shows yet"}, status=404
+            )
+        if shuffle:
+            random.shuffle(ids)
+        await engine.play(ids)
+        return web.json_response(engine.status())
+
     async def play(request: web.Request) -> web.Response:
         body = await request.json()
+        if "playlist" in body:
+            p = playlist_store.get(str(body["playlist"]))
+            return await _play_playlist(p, bool(body.get("shuffle", True)))
         if "query" in body:
             query = str(body["query"])
+            # A spoken playlist name ("prism chill") plays the playlist shuffled.
+            named = playlist_store.match(query)
+            if named is not None:
+                return await _play_playlist(named, True)
             matched = best_match(query, shows.list())
             if matched is None:
                 return web.json_response({"error": _miss_reason(query)}, status=404)
@@ -163,7 +210,7 @@ def build_app(
         elif isinstance(body.get("queue"), list):
             await engine.play([str(s) for s in body["queue"]])
         else:
-            raise ValueError("body needs query, show, queue: [ids], or queue: all")
+            raise ValueError("body needs query, show, playlist, queue: [ids], or queue: all")
         return web.json_response(engine.status())
 
     async def stop(_request: web.Request) -> web.Response:
@@ -188,6 +235,9 @@ def build_app(
     app.router.add_get("/v1/shows/{id}/bundle", get_bundle)
     app.router.add_delete("/v1/shows/{id}", delete_show)
     app.router.add_get("/v1/shows/{id}/audio", audio, name="audio")
+    app.router.add_get("/v1/playlists", list_playlists)
+    app.router.add_put("/v1/playlists/{name}", put_playlist)
+    app.router.add_delete("/v1/playlists/{name}", delete_playlist)
     app.router.add_post("/v1/play", play)
     app.router.add_post("/v1/stop", stop)
     app.router.add_post("/v1/next", next_show)

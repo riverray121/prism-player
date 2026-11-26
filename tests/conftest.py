@@ -10,6 +10,7 @@ from prism_player.audio.none import NoneAudio
 from prism_player.config import Config
 from prism_player.engine import Engine
 from prism_player.hooks import Hooks
+from prism_player.playlists import PlaylistStore, palette_for
 from prism_player.requests import RequestStore
 from prism_player.store import ShowStore
 from tests.fakes import FakeClock, FakeHubs, FakeSender
@@ -40,6 +41,7 @@ async def client(tmp_path, hook_target):
     cfg.hooks.on_publish = url
     shows = ShowStore(tmp_path)
     requests = RequestStore(tmp_path / "requests.sqlite")
+    playlists = PlaylistStore(tmp_path / "playlists.sqlite")
     async with aiohttp.ClientSession() as session:
         hooks = Hooks(session)
         clock = FakeClock()
@@ -53,15 +55,19 @@ async def client(tmp_path, hook_target):
             hooks,
             audio_url=lambda show_id: f"http://player/v1/shows/{show_id}/audio",
             clock=clock,
+            palette_for=lambda show_id: palette_for(show_id, playlists, requests, shows),
         )
-        app = build_app(cfg, "secret", shows, requests, hooks, engine)
+        app = build_app(cfg, "secret", shows, requests, hooks, engine, playlists=playlists)
         async with TestClient(TestServer(app)) as tc:
             tc.shows = shows
             tc.hooks = hooks
             tc.engine = engine
+            tc.requests = requests
+            tc.playlists = playlists
             tc.hubs = hubs
             tc.sender = sender
             tc.clock = clock
             yield tc
         await engine.stop()
         requests.close()
+        playlists.close()

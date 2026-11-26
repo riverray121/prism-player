@@ -17,6 +17,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
 
+from prism_player import palettes
 from prism_player.audio.base import AudioBackend
 from prism_player.ddp import blackout_packets, frame_packets
 from prism_player.hooks import Hooks
@@ -79,6 +80,7 @@ class Engine:
         on_play_url: str | None = None,
         on_stop_url: str | None = None,
         clock: Clock | None = None,
+        palette_for: Callable[[str], str | None] | None = None,
     ) -> None:
         self.shows = shows
         self.hubs = hubs
@@ -90,6 +92,8 @@ class Engine:
         self.on_play_url = on_play_url
         self.on_stop_url = on_stop_url
         self.clock: Clock = clock or MonotonicClock()
+        # Show id -> palette name or None; a palette recolors the show at load.
+        self.palette_for = palette_for
         self.queue: list[str] = []
         self.current: Current | None = None
         self._runner: asyncio.Task[None] | None = None
@@ -223,7 +227,10 @@ class Engine:
     ) -> dict[str, HubRun]:
         runs: dict[str, HubRun] = {}
         hubs_by_mac: dict[str, Any] = {}
-        for light in lights:
+        palette = self.palette_for(cur.show_id) if self.palette_for else None
+        colors = palettes.colors_for_show(palette, cur.show_id, len(lights)) if palette else None
+        cur.summary = {**cur.summary, "palette": palette}
+        for index, light in enumerate(lights):
             key = str(light["key"])
             mac, output = parse_key(key)
             if mac not in hubs_by_mac:
@@ -237,6 +244,8 @@ class Engine:
             if hub.address not in runs:
                 runs[hub.address] = HubRun(hub.address, was_on=await self.hubs.is_on(hub.address))
             data = (folder / str(light["frames"])).read_bytes()
+            if colors is not None:
+                data = await asyncio.to_thread(palettes.recolor, data, colors[index])
             runs[hub.address].lights.append((target, data))
         if not runs:
             log.warning("show %s: no light resolved to a hub", cur.show_id)
