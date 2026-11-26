@@ -79,7 +79,13 @@ def build_app(
         external = body.get("external") or {}
         if not isinstance(external, dict):
             raise ValueError("external must be an object")
-        created_req, created = requests.create(str(body["title"]), str(body["artist"]), external)
+        duration = body.get("duration_s")
+        created_req, created = requests.create(
+            str(body["title"]),
+            str(body["artist"]),
+            external,
+            float(duration) if duration is not None else None,
+        )
         if created:
             hooks.fire(cfg.hooks.on_request, "request", created_req)
         return web.json_response(created_req, status=201 if created else 200)

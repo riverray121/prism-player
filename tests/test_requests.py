@@ -62,3 +62,35 @@ async def test_bad_request_body(client):
         "/v1/requests", json={"title": "x", "artist": "y", "external": "no"}, headers=AUTH
     )
     assert resp.status == 400
+
+
+async def test_duration_is_stored_and_filled_in_later(client):
+    body = {"title": "Dior", "artist": "Joji", "external": {"spotify_uri": "spotify:track:d"}}
+    first = await (await client.post("/v1/requests", json=body, headers=AUTH)).json()
+    assert first["duration_s"] is None
+    again = await client.post("/v1/requests", json={**body, "duration_s": 113.0}, headers=AUTH)
+    assert again.status == 200
+    assert (await again.json())["duration_s"] == 113.0
+    third = await client.post("/v1/requests", json={**body, "duration_s": 999.0}, headers=AUTH)
+    assert (await third.json())["duration_s"] == 113.0
+
+
+def test_old_database_gains_the_duration_column(tmp_path):
+    import sqlite3
+
+    from prism_player.requests import RequestStore
+
+    path = tmp_path / "old.sqlite"
+    con = sqlite3.connect(path)
+    con.execute(
+        "CREATE TABLE requests (id TEXT PRIMARY KEY, title TEXT NOT NULL, artist TEXT NOT NULL,"
+        " external TEXT NOT NULL, requested_at TEXT NOT NULL, status TEXT NOT NULL, show_id TEXT)"
+    )
+    con.execute("INSERT INTO requests VALUES ('r1', 'T', 'A', '{}', 'now', 'open', NULL)")
+    con.commit()
+    con.close()
+    store = RequestStore(path)
+    assert store.get("r1")["duration_s"] is None
+    req, created = store.create("New", "A", {"spotify_uri": "x"}, 200.0)
+    assert created and req["duration_s"] == 200.0
+    store.close()

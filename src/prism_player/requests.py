@@ -33,9 +33,14 @@ class RequestStore:
                 external TEXT NOT NULL,
                 requested_at TEXT NOT NULL,
                 status TEXT NOT NULL,
-                show_id TEXT
+                show_id TEXT,
+                duration_s REAL
             )"""
         )
+        # Databases created before duration_s lack the column.
+        columns = {r["name"] for r in self.con.execute("PRAGMA table_info(requests)")}
+        if "duration_s" not in columns:
+            self.con.execute("ALTER TABLE requests ADD COLUMN duration_s REAL")
         self.con.execute(
             """CREATE TABLE IF NOT EXISTS request_external (
                 value TEXT PRIMARY KEY,
@@ -54,12 +59,18 @@ class RequestStore:
             "requested_at": row["requested_at"],
             "status": row["status"],
             "show_id": row["show_id"],
+            "duration_s": row["duration_s"],
         }
 
     def create(
-        self, title: str, artist: str, external: dict[str, Any] | None
+        self,
+        title: str,
+        artist: str,
+        external: dict[str, Any] | None,
+        duration_s: float | None = None,
     ) -> tuple[dict[str, Any], bool]:
         """Insert a request, or return the existing one sharing any external id.
+        An existing request without a length takes the one given.
 
         Returns (request, created).
         """
@@ -72,11 +83,18 @@ class RequestStore:
                 (value,),
             ).fetchone()
             if row:
+                if duration_s is not None and row["duration_s"] is None:
+                    self.con.execute(
+                        "UPDATE requests SET duration_s = ? WHERE id = ?", (duration_s, row["id"])
+                    )
+                    self.con.commit()
+                    return self.get(row["id"]), False
                 return self._row(row), False
         request_id = uuid.uuid4().hex
         self.con.execute(
-            "INSERT INTO requests VALUES (?, ?, ?, ?, ?, 'open', NULL)",
-            (request_id, title, artist, json.dumps(external), _now()),
+            "INSERT INTO requests (id, title, artist, external, requested_at, status, show_id,"
+            " duration_s) VALUES (?, ?, ?, ?, ?, 'open', NULL, ?)",
+            (request_id, title, artist, json.dumps(external), _now(), duration_s),
         )
         self.con.executemany(
             "INSERT OR IGNORE INTO request_external VALUES (?, ?)",
