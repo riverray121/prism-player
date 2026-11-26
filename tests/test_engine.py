@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import io
 import zipfile
+from itertools import pairwise
 from pathlib import Path
 
 import aiohttp
@@ -11,7 +12,7 @@ from aiohttp import web
 from aiohttp.test_utils import TestServer
 
 from prism_player.audio.none import NoneAudio
-from prism_player.engine import Engine
+from prism_player.engine import KEEPALIVE_S, Engine
 from prism_player.hooks import Hooks
 from prism_player.store import ShowStore, UnknownShow
 from tests.bundles import FRAME_COUNT, FRAME_RATE, LIGHTS, bundle, manifest
@@ -70,17 +71,19 @@ async def test_frames_go_out_on_the_bundle_rate(rig):
     await engine.play(["a"])
     await wait_idle(engine)
     light0 = [s for s in sender.sent if int.from_bytes(s.packets[0][4:8], "big") == 0]
-    # FRAME_COUNT frames plus the blackout at restore, all to the hub address.
-    assert len(light0) == FRAME_COUNT + 1
+    # The first frame held while the audio starts, FRAME_COUNT frames, and the
+    # blackout at restore, all to the hub address.
+    assert len(light0) == FRAME_COUNT + 2
+    assert light0[0].packets == light0[1].packets
     assert all(s.address == "10.0.0.5" for s in sender.sent)
-    times = [s.t for s in light0[:FRAME_COUNT]]
+    times = [s.t for s in light0[1 : FRAME_COUNT + 1]]
     assert times == pytest.approx([i * PERIOD for i in range(FRAME_COUNT)])
     # Frame i carries the bytes at i * pixel_count * 3 of the light's frame file.
-    frame3 = light0[3].packets[0][10:]
+    frame3 = light0[4].packets[0][10:]
     assert frame3 == bytes(((3 * 4 * 3) + j) % 256 for j in range(12))
     # The second light's frames land at its output start (4 px) times 3.
     light1 = [s for s in sender.sent if int.from_bytes(s.packets[0][4:8], "big") == 12]
-    assert len(light1) == FRAME_COUNT + 1
+    assert len(light1) == FRAME_COUNT + 2
 
 
 async def test_late_frames_are_skipped_not_queued(rig):
@@ -89,7 +92,7 @@ async def test_late_frames_are_skipped_not_queued(rig):
     await engine.play(["a"])
     await wait_idle(engine)
     light0 = [s for s in sender.sent if int.from_bytes(s.packets[0][4:8], "big") == 0]
-    sent_frames = [s.packets[0][10] for s in light0[:-1]]
+    sent_frames = [s.packets[0][10] for s in light0[1:-1]]
     # Every sleep overshoots by 2.5 frames, so the scheduler jumps ahead and
     # never sends the frames that were due in between.
     assert len(sent_frames) < FRAME_COUNT
@@ -144,7 +147,7 @@ async def test_queue_plays_both_with_restore_between(rig):
         ("10.0.0.5", False),
     ]
     light0 = [s for s in sender.sent if int.from_bytes(s.packets[0][4:8], "big") == 0]
-    assert len(light0) == 2 * (FRAME_COUNT + 1)
+    assert len(light0) == 2 * (FRAME_COUNT + 2)
 
 
 async def test_next_ends_current_and_starts_next(rig):
@@ -229,11 +232,13 @@ async def test_position_correction_rebases_after_two_strikes(tmp_path: Path):
         await engine.play(["long"])
         await wait_idle(engine)
     # Two polls (at 2 s and 4 s) disagree by a second, so the clock re-bases a
-    # second later at the second poll; frames are never resent, every later
-    # frame just lands a second later than its original deadline.
+    # second later at the second poll and every later frame lands a second
+    # after its original deadline. During that second the last frame is
+    # resent every KEEPALIVE_S, so the hub never leaves realtime mode.
     light0 = [s for s in sender.sent if int.from_bytes(s.packets[0][4:8], "big") == 0]
-    assert len(light0) == 400
-    assert light0[79].t == pytest.approx(79 * PERIOD)
+    times = [s.t for s in light0]
+    assert max(b - a for a, b in pairwise(times)) <= KEEPALIVE_S + 1e-9
+    assert len(light0) == 1 + 400 + 4  # hold, frames, one resend per 0.25 s of the 1 s gap
     assert light0[-1].t == pytest.approx(399 * PERIOD + 1.0)
 
 
@@ -295,7 +300,8 @@ async def test_offset_is_kept_across_position_checks(tmp_path: Path):
     # Audio agrees with the clock exactly, so the 200 ms light delay stays put:
     # every frame lands 0.2 s after its audio time.
     light0 = [s for s in sender.sent if int.from_bytes(s.packets[0][4:8], "big") == 0]
-    assert light0[0].t == pytest.approx(0.2)
+    assert light0[0].t == pytest.approx(0.0)  # held first frame while the audio starts
+    assert light0[1].t == pytest.approx(0.2)
     assert light0[-1].t == pytest.approx(399 * PERIOD + 0.2)
 
 

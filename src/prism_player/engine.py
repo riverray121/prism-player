@@ -29,6 +29,11 @@ log = logging.getLogger(__name__)
 POSITION_POLL_S = 2.0
 # Consecutive polls disagreeing by more than a frame before the clock re-bases.
 POSITION_STRIKES = 2
+# WLED drops a realtime stream after 1 s without a frame and shows its own
+# look (the ambient preset) until frames return. Whenever the engine waits,
+# while the audio starts or after the clock moves back to meet late audio,
+# it resends the current frame this often.
+KEEPALIVE_S = 0.25
 
 
 class Clock(Protocol):
@@ -213,7 +218,15 @@ class Engine:
                 if not run.was_on:
                     await self.hubs.set_power(run.address, True)
             self.hooks.fire(self.on_play_url, "play", cur.summary)
-            await self.audio.start(self.audio_url(show_id))
+            # Starting the audio waits until the speaker reports playing, often
+            # seconds; the first frame holds the lights meanwhile.
+            start = asyncio.create_task(self.audio.start(self.audio_url(show_id)))
+            while True:
+                self._send_frame(list(runs.values()), 0)
+                done, _ = await asyncio.wait({start}, timeout=KEEPALIVE_S)
+                if done:
+                    break
+            await start
             cur.t0 = self.clock.now() + self.offset_s
             await self._stream(cur, list(runs.values()))
         finally:
@@ -245,7 +258,8 @@ class Engine:
                 runs[hub.address] = HubRun(hub.address, was_on=await self.hubs.is_on(hub.address))
             data = (folder / str(light["frames"])).read_bytes()
             if colors is not None:
-                data = await asyncio.to_thread(palettes.recolor, data, colors[index])
+                track = palettes.color_track(colors[index], cur.frame_count, cur.frame_rate_hz)
+                data = await asyncio.to_thread(palettes.recolor, data, target.pixel_count, track)
             runs[hub.address].lights.append((target, data))
         if not runs:
             log.warning("show %s: no light resolved to a hub", cur.show_id)
@@ -260,6 +274,13 @@ class Engine:
         while i < cur.frame_count:
             deadline = cur.t0 + i * period
             now = self.clock.now()
+            # A long wait (the clock just moved back) resends the last frame
+            # so the hubs never time out of realtime mode.
+            while i > 0 and deadline - now > KEEPALIVE_S:
+                await self.clock.sleep(KEEPALIVE_S)
+                self._send_frame(runs, i - 1)
+                now = self.clock.now()
+                deadline = cur.t0 + i * period
             if now < deadline:
                 await self.clock.sleep(deadline - now)
                 now = self.clock.now()
@@ -267,11 +288,7 @@ class Engine:
             due = int((now - cur.t0) / period)
             if due > i:
                 i = min(due, cur.frame_count - 1)
-            for run in runs:
-                for target, data in run.lights:
-                    size = target.pixel_count * 3
-                    frame = memoryview(data)[i * size : (i + 1) * size]
-                    self.sender.send(run.address, frame_packets(frame, target.start * 3))
+            self._send_frame(runs, i)
             i += 1
             if now >= next_poll:
                 next_poll = now + POSITION_POLL_S
@@ -287,6 +304,13 @@ class Engine:
                             strikes = 0
                     else:
                         strikes = 0
+
+    def _send_frame(self, runs: list[HubRun], i: int) -> None:
+        for run in runs:
+            for target, data in run.lights:
+                size = target.pixel_count * 3
+                frame = memoryview(data)[i * size : (i + 1) * size]
+                self.sender.send(run.address, frame_packets(frame, target.start * 3))
 
     async def _restore(self, runs: dict[str, HubRun]) -> None:
         for run in runs.values():

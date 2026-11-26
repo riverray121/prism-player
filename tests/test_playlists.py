@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 from prism_player.ddp import HEADER_BYTES
-from prism_player.palettes import colors_for_show, recolor
-from tests.bundles import LIGHTS, bundle, frames, manifest
+from prism_player.palettes import color_track, colors_for_show, recolor
+from tests.bundles import FRAME_COUNT, FRAME_RATE, LIGHTS, bundle, frames, manifest
 from tests.conftest import AUTH
 from tests.test_playback_api import wait_idle
 
@@ -92,8 +92,9 @@ async def test_palette_playlist_recolors_its_shows_only(client):
     await wait_idle(client.engine)
     first = client.sender.sent[0].packets[0][HEADER_BYTES:]
     pixels = LIGHTS[0][1]
-    color = colors_for_show("indie-dusk", "s1", len(LIGHTS))[0]
-    assert first == recolor(frames(pixels)[: pixels * 3], color)
+    cycle = colors_for_show("indie-dusk", "s1", len(LIGHTS))[0]
+    track = color_track(cycle, FRAME_COUNT, FRAME_RATE)
+    assert first == recolor(frames(pixels), pixels, track)[: pixels * 3]
 
     client.sender.sent.clear()
     resp = await client.post("/v1/play", json={"show": "s2"}, headers=AUTH)
