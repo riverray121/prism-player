@@ -37,6 +37,22 @@ def _word_score(query: str, candidate: str) -> float:
     return hits / len(words)
 
 
+def _title_by_artist_score(q: str, title: str, artist: str) -> float:
+    """Score "<title> by <artist>" as two halves. The last "by" splits, so a
+    title containing "by" stays whole. Artist names compare with spaces
+    removed, because speech recognition splits and joins words freely
+    ("Potterbat" for "Butter Bath")."""
+    tq, sep, aq = q.rpartition(" by ")
+    if not sep or not tq or not aq:
+        return 0.0
+    t = normalize(title)
+    title_s = 1.0 if tq == t else max(_ratio(tq, t), _word_score(tq, t))
+    names = [normalize(a) for a in artist.split(",")] + [normalize(artist)]
+    aq_joined = aq.replace(" ", "")
+    artist_s = max(_ratio(aq_joined, n.replace(" ", "")) for n in names)
+    return (title_s + artist_s) / 2
+
+
 def score(query: str, title: str, artist: str) -> float:
     q = normalize(query)
     t = normalize(title)
@@ -45,7 +61,13 @@ def score(query: str, title: str, artist: str) -> float:
         return 0.0
     if q == t or q in t:
         return 1.0
-    return max(_ratio(q, t), _ratio(q, at), _word_score(q, t), _word_score(q, at))
+    return max(
+        _ratio(q, t),
+        _ratio(q, at),
+        _word_score(q, t),
+        _word_score(q, at),
+        _title_by_artist_score(q, title, artist),
+    )
 
 
 def best_match(query: str, shows: list[dict[str, Any]]) -> dict[str, Any] | None:

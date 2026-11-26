@@ -8,6 +8,8 @@ SHOWS = [
         "artist": "Roman Nasenmensch, domi4wave",
     },
     {"id": "c", "title": "Dior", "artist": "Joji"},
+    {"id": "d", "title": "Ivy", "artist": "Butter Bath, Nice Guys"},
+    {"id": "e", "title": "Stand by Me", "artist": "Ben E. King"},
 ]
 
 
@@ -24,6 +26,20 @@ def test_misheard_word_and_partial_title():
 def test_artist_and_artist_title():
     assert best_match("joji", SHOWS)["id"] == "c"
     assert best_match("dior by joji", SHOWS)["id"] == "c"
+
+
+def test_title_by_misheard_artist():
+    assert best_match("IV by Potterbat", SHOWS)["id"] == "d"
+    assert best_match("ivy by butter bath", SHOWS)["id"] == "d"
+
+
+def test_by_inside_a_title():
+    assert best_match("stand by me", SHOWS)["id"] == "e"
+    assert best_match("stand by me by ben e king", SHOWS)["id"] == "e"
+
+
+def test_right_artist_wrong_title_is_none():
+    assert best_match("purple rain by butter bath", SHOWS) is None
 
 
 def test_nonsense_is_none():
