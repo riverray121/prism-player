@@ -25,6 +25,7 @@ async def test_status_idle_and_auth(client):
         "show": None,
         "position_s": None,
         "queue": [],
+        "playlist": None,
         "skipped_lights": [],
     }
 

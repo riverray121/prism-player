@@ -27,7 +27,7 @@ The Companion API (`/v1/info`, `/v1/requests`, `/v1/shows`) as defined by Prism,
 | DELETE | `/v1/playlists/{name}` | Remove a playlist |
 | POST | `/v1/stop` | Stop, restore hubs |
 | POST | `/v1/next` | Skip to the next queued show |
-| GET | `/v1/status` | `{state, show, position_s, queue}` |
+| GET | `/v1/status` | `{state, show, position_s, queue, playlist}` (`playlist`: the playlist the running queue came from, or null) |
 | GET | `/v1/shows/{id}/audio` | The show's audio file, for the media player |
 | GET | `/healthz` | Liveness |
 

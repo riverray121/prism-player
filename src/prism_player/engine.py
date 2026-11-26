@@ -100,6 +100,8 @@ class Engine:
         # Show id -> palette name or None; a palette recolors the show at load.
         self.palette_for = palette_for
         self.queue: list[str] = []
+        # The playlist the running queue came from, or None.
+        self.playlist: str | None = None
         self.current: Current | None = None
         self._runner: asyncio.Task[None] | None = None
         self._show_task: asyncio.Task[None] | None = None
@@ -117,10 +119,11 @@ class Engine:
             "show": cur.summary if cur is not None else None,
             "position_s": position,
             "queue": list(self.queue),
+            "playlist": self.playlist if cur is not None else None,
             "skipped_lights": list(cur.skipped_lights) if cur is not None else [],
         }
 
-    async def play(self, show_ids: list[str]) -> None:
+    async def play(self, show_ids: list[str], playlist: str | None = None) -> None:
         for show_id in show_ids:
             if not self.shows.exists(show_id):
                 raise UnknownShow(show_id)
@@ -128,6 +131,7 @@ class Engine:
             raise ValueError("nothing to play")
         await self.stop()
         self.queue = list(show_ids)
+        self.playlist = playlist
         self._started = asyncio.Event()
         self._runner = asyncio.create_task(self._run_queue())
         # Return once the first show is current, so a status read right after

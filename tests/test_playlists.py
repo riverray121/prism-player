@@ -67,6 +67,7 @@ async def test_spoken_names_play_the_playlist(client):
         assert resp.status == 200, spoken
         status = await resp.json()
         assert {status["show"]["id"], *status["queue"]} == {"s1", "s2"}
+        assert status["playlist"] == "Prism Chill"
         await client.post("/v1/stop", headers=AUTH)
 
 

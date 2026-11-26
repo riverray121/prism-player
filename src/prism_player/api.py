@@ -191,7 +191,7 @@ def build_app(
             )
         if shuffle:
             random.shuffle(ids)
-        await engine.play(ids)
+        await engine.play(ids, playlist=str(p["name"]))
         return web.json_response(engine.status())
 
     async def play(request: web.Request) -> web.Response:
