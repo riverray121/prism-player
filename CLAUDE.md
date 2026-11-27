@@ -16,7 +16,7 @@ Read `docs/architecture.md` before starting work: model, structure, build order,
 
 ## Git
 - Remote: github.com/riverray121/prism-player (public)
-- Push: after the user has tested a slice on the bench hub and confirmed.
+- Push: commit and push as work lands; undo a bad change with `git revert`.
 
 ## Standing rules
 - The Companion API and the show bundle format are defined in the Prism repo (`docs/companion-api.md`). This project implements them; it does not redefine them. A change to the contract is made there first.
