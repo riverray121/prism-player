@@ -17,7 +17,7 @@ from prism_player.config import Config
 from prism_player.engine import Engine
 from prism_player.hooks import Hooks
 from prism_player.match import best_match
-from prism_player.palettes import UnknownPalette
+from prism_player.palettes import PALETTES, UnknownPalette
 from prism_player.playlists import PlaylistStore, UnknownPlaylist, show_ids
 from prism_player.publish_batch import PublishBatcher
 from prism_player.requests import STATUSES, RequestStore, UnknownRequest
@@ -169,7 +169,9 @@ def build_app(
 
     def _playlist_view(p: dict[str, Any]) -> dict[str, Any]:
         ids = show_ids(p, requests, shows)
-        return {**p, "show_ids": ids}
+        # The palette's hex colors, for clients that draw the playlist.
+        colors = PALETTES.get(p["palette"]) if p["palette"] else None
+        return {**p, "show_ids": ids, "colors": colors}
 
     async def list_playlists(_request: web.Request) -> web.Response:
         return web.json_response({"playlists": [_playlist_view(p) for p in playlist_store.list()]})

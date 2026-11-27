@@ -38,6 +38,7 @@ async def test_put_and_list_resolve_published_shows(client):
     assert [(p["name"], p["palette"], p["show_ids"]) for p in listed] == [
         ("Prism Chill", "indie-dusk", ["s1"])
     ]
+    assert listed[0]["colors"][0] == "#F2B33D"
 
 
 async def test_bad_palette_and_unknown_playlist(client):
