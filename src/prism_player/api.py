@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import logging
 import mimetypes
-import random
 import tempfile
 from collections.abc import Awaitable, Callable
 from pathlib import Path
@@ -196,7 +195,7 @@ def build_app(
                 {"error": f"playlist {p['name']!r} has no playable shows yet"}, status=404
             )
         if shuffle:
-            random.shuffle(ids)
+            ids = engine.history.fresh_shuffle(ids)
         await engine.play(ids, playlist=str(p["name"]))
         return web.json_response(engine.status())
 

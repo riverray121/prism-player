@@ -18,6 +18,7 @@ from prism_player.audio.ha import HaBackend
 from prism_player.audio.none import NoneAudio
 from prism_player.ddp import Sender
 from prism_player.engine import Engine
+from prism_player.history import PlayHistory
 from prism_player.hooks import Hooks
 from prism_player.hubs import Hubs
 from prism_player.playlists import PlaylistStore, palette_for
@@ -48,6 +49,7 @@ async def serve(cfg: config.Config) -> None:
             on_play_url=cfg.hooks.on_play,
             on_stop_url=cfg.hooks.on_stop,
             palette_for=lambda show_id: palette_for(show_id, playlists, requests, shows),
+            history=PlayHistory(cfg.data_dir / "recent.json"),
         )
         await hubs.start()
         batcher = PublishBatcher(hooks, cfg.hooks.on_publish, requests.pending_count)

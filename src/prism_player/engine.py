@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import random
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -20,6 +19,7 @@ from typing import Any, Protocol
 from prism_player import palettes
 from prism_player.audio.base import AudioBackend
 from prism_player.ddp import blackout_packets, frame_packets
+from prism_player.history import PlayHistory
 from prism_player.hooks import Hooks
 from prism_player.hubs import HubDirectory, Target, parse_key
 from prism_player.store import ShowStore, UnknownShow
@@ -86,6 +86,7 @@ class Engine:
         on_stop_url: str | None = None,
         clock: Clock | None = None,
         palette_for: Callable[[str], str | None] | None = None,
+        history: PlayHistory | None = None,
     ) -> None:
         self.shows = shows
         self.hubs = hubs
@@ -97,6 +98,7 @@ class Engine:
         self.on_play_url = on_play_url
         self.on_stop_url = on_stop_url
         self.clock: Clock = clock or MonotonicClock()
+        self.history = history or PlayHistory(None)
         # Show id -> palette name or None; a palette recolors the show at load.
         self.palette_for = palette_for
         self.queue: list[str] = []
@@ -148,7 +150,7 @@ class Engine:
     async def play_all(self, shuffle: bool = False) -> None:
         ids = [s["id"] for s in self.shows.list()]
         if shuffle:
-            random.shuffle(ids)
+            ids = self.history.fresh_shuffle(ids)
         await self.play(ids)
 
     async def stop(self) -> None:
@@ -214,6 +216,7 @@ class Engine:
             frame_count=int(manifest["frame_count"]),
         )
         self.current = cur
+        self.history.record(show_id)
         self._started.set()
         runs: dict[str, HubRun] = {}
         try:
