@@ -9,7 +9,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-STATUSES = ("open", "analyzing", "published", "rejected")
+STATUSES = ("open", "analyzing", "published", "rejected", "removed")
 
 
 class UnknownRequest(KeyError):
@@ -83,6 +83,15 @@ class RequestStore:
                 (value,),
             ).fetchone()
             if row:
+                if row["status"] == "removed":
+                    # The source added the song again: it is wanted, re-analyze.
+                    self.con.execute(
+                        "UPDATE requests SET status = 'open', show_id = NULL,"
+                        " duration_s = COALESCE(?, duration_s) WHERE id = ?",
+                        (duration_s, row["id"]),
+                    )
+                    self.con.commit()
+                    return self.get(row["id"]), True
                 if duration_s is not None and row["duration_s"] is None:
                     self.con.execute(
                         "UPDATE requests SET duration_s = ? WHERE id = ?", (duration_s, row["id"])

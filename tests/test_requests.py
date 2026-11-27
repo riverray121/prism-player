@@ -94,3 +94,27 @@ def test_old_database_gains_the_duration_column(tmp_path):
     req, created = store.create("New", "A", {"spotify_uri": "x"}, 200.0)
     assert created and req["duration_s"] == 200.0
     store.close()
+
+
+async def test_removed_request_drops_its_show_and_revives_when_added_again(client):
+    from tests.bundles import bundle, manifest
+
+    zip_headers = {"Content-Type": "application/zip", **AUTH}
+    body = {"title": "Ivy", "artist": "A", "external": {"spotify_uri": "spotify:track:i"}}
+    req = await (await client.post("/v1/requests", json=body, headers=AUTH)).json()
+    m = manifest(title="Ivy", request_id=req["id"])
+    assert (await client.put("/v1/shows/s1", data=bundle(m), headers=zip_headers)).status == 200
+    patch = {"status": "published", "show_id": "s1"}
+    await client.patch(f"/v1/requests/{req['id']}", json=patch, headers=AUTH)
+
+    resp = await client.patch(
+        f"/v1/requests/{req['id']}", json={"status": "removed"}, headers=AUTH
+    )
+    assert (await resp.json())["status"] == "removed"
+    assert not client.shows.exists("s1")
+
+    again = await client.post("/v1/requests", json={**body, "duration_s": 200.0}, headers=AUTH)
+    assert again.status == 201
+    revived = await again.json()
+    assert revived["id"] == req["id"]
+    assert (revived["status"], revived["show_id"], revived["duration_s"]) == ("open", None, 200.0)

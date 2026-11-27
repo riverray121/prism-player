@@ -99,6 +99,10 @@ def build_app(
         updated = requests.update(
             request.match_info["id"], status, str(show_id) if show_id is not None else None
         )
+        # A removed song leaves the player: its show goes, so neither a name
+        # query nor a playlist can play it.
+        if status == "removed" and updated["show_id"] and shows.exists(updated["show_id"]):
+            shows.delete(updated["show_id"])
         return web.json_response(updated)
 
     async def list_shows(_request: web.Request) -> web.Response:
